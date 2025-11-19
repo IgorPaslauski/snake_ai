@@ -1,0 +1,13 @@
+from __future__ import annotations
+from dataclasses import dataclass
+import numpy as np
+
+
+@dataclass
+class Genome:
+    """Representa um indivíduo da população (vetor de pesos da rede)."""
+    params: np.ndarray
+    fitness: float | None = None
+
+    def copy(self) -> "Genome":
+        return Genome(params=self.params.copy(), fitness=self.fitness)

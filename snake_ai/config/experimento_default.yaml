@@ -1,0 +1,33 @@
+experiment:
+  name: "snake_ga_treino_pesado"
+  random_seed: 2
+
+env:
+  grid_width: 20
+  grid_height: 20
+  max_steps_per_episode: 400      # reduz um pouco, força ser eficiente
+  max_steps_without_food: 150     # evita cobra ficar passeando demais
+  step_penalty: -0.002            # penaliza mais andar à toa
+  food_reward: 1.5                # recompensa mais por maçã
+  death_penalty: -1.0
+
+ga:
+  population_size: 120            # bem maior que antes, mas ainda viável
+  generations: 500                # suficientemente alto pra ver evolução grande
+  episodes_per_genome: 4          # média melhor de performance
+  mutation_rate: 0.08             # um pouco mais de exploração
+  mutation_std: 0.3               # mutações mais “fortes”
+  crossover_rate: 0.75
+  elite_fraction: 0.1
+
+visual:
+  show_live: false                # treino sério = sem pygame
+  live_fps: 10
+  live_speed: 10.0
+  live_cell_size: 20
+  live_episodes_per_gen: 1
+  live_every_n_generations: 20
+
+logging:
+  save_logs: true
+  save_best_model: true
