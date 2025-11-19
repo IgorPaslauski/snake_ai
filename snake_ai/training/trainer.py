@@ -40,6 +40,7 @@ class TrainingConfig:
     step_penalty: float
     food_reward: float
     death_penalty: float
+    self_body_penalty: float
 
     show_live: bool
     live_fps: int
@@ -74,6 +75,7 @@ class Trainer:
             step_penalty=cfg.step_penalty,
             food_reward=cfg.food_reward,
             death_penalty=cfg.death_penalty,
+            self_body_penalty=cfg.self_body_penalty,
         )
 
         self.input_dim = 11
@@ -145,6 +147,7 @@ class Trainer:
             "step_penalty": self.env_config.step_penalty,
             "food_reward": self.env_config.food_reward,
             "death_penalty": self.env_config.death_penalty,
+            "self_body_penalty": self.env_config.self_body_penalty,
         }
         args_list = [
             (

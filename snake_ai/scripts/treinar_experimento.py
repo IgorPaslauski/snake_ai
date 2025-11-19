@@ -51,6 +51,7 @@ def main():
         step_penalty=cfg_dict["env"]["step_penalty"],
         food_reward=cfg_dict["env"]["food_reward"],
         death_penalty=cfg_dict["env"]["death_penalty"],
+        self_body_penalty=cfg_dict["env"].get("self_body_penalty", -0.5),
         show_live=visual_cfg.get("show_live", False),
         live_fps=visual_cfg.get("live_fps", 10),
         live_speed=visual_cfg.get("live_speed", 1.0),

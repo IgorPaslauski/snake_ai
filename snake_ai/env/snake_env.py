@@ -16,6 +16,7 @@ class SnakeConfig:
     step_penalty: float = -0.001
     food_reward: float = 1.0
     death_penalty: float = -1.0
+    self_body_penalty: float = -0.5  # Penalidade por colidir com o próprio corpo
 
 
 class SnakeEnv:
@@ -62,6 +63,10 @@ class SnakeEnv:
         if position in self.snake[1:]:
             return True
         return False
+    
+    def _is_self_collision(self, position: Tuple[int, int]) -> bool:
+        """Verifica se a posição colide especificamente com o próprio corpo (não parede)."""
+        return position in self.snake[1:]
 
     def _get_state(self) -> np.ndarray:
         head_x, head_y = self.snake[0]
@@ -130,6 +135,11 @@ class SnakeEnv:
         new_head = (self.snake[0][0] + dir_x, self.snake[0][1] + dir_y)
 
         reward = self.config.step_penalty
+
+        # Penalidade por colidir com o próprio corpo (antes de verificar colisão geral)
+        if self._is_self_collision(new_head):
+            reward += self.config.self_body_penalty
+            # Ainda aplica death_penalty, mas a penalidade de corpo próprio é adicional
 
         if self._is_collision(new_head):
             self.done = True

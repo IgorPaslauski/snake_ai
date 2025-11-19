@@ -57,12 +57,23 @@ def evaluate_genome(
     avg_apples = total_apples / episodes
     avg_steps = total_steps / episodes
     
-    # Bônus por eficiência (mais maçãs com menos passos) - otimizado
+    # Bônus por eficiência (mais maçãs com menos passos)
     efficiency_bonus = 0.0
     if avg_steps > 0:
         efficiency_bonus = 0.05 * (avg_apples / avg_steps)
     
-    fitness = avg_fitness + 0.1 * avg_apples + efficiency_bonus
+    # Bônus progressivo por maçãs (incentiva exploração de estratégias melhores)
+    # Quanto mais maçãs, maior o bônus exponencial
+    apples_bonus = 0.0
+    if avg_apples > 0:
+        apples_bonus = 0.15 * avg_apples + 0.02 * (avg_apples ** 1.5)  # Bônus não-linear
+    
+    # Penalidade por muitos passos sem maçãs (incentiva eficiência)
+    steps_penalty = 0.0
+    if avg_steps > 200 and avg_apples < 1:
+        steps_penalty = -0.1 * (avg_steps / 200)
+    
+    fitness = avg_fitness + apples_bonus + efficiency_bonus + steps_penalty
     genome.fitness = float(fitness)
     return float(fitness)
 
@@ -86,6 +97,7 @@ def _evaluate_genome_worker(args):
         step_penalty=env_config_dict["step_penalty"],
         food_reward=env_config_dict["food_reward"],
         death_penalty=env_config_dict["death_penalty"],
+        self_body_penalty=env_config_dict.get("self_body_penalty", -0.5),
     )
     
     def build_env():

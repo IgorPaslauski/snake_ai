@@ -61,14 +61,27 @@ class GeneticAlgorithm:
     def _crossover(self, parent1: Genome, parent2: Genome) -> Genome:
         if self.rng.random() > self.crossover_rate:
             return parent1.copy()
-        mask = self.rng.random(parent1.params.shape) < 0.5
-        child_params = np.where(mask, parent1.params, parent2.params)
-        return Genome(params=child_params)
+        
+        # Crossover aritmético (blend) - cria filhos mais diversos
+        # Combina os pais de forma suave ao invés de apenas trocar genes
+        alpha = self.rng.random()  # Fator de blend aleatório
+        child_params = alpha * parent1.params + (1 - alpha) * parent2.params
+        
+        # Adiciona pequena variação para aumentar diversidade
+        noise = self.rng.normal(0.0, 0.01, size=parent1.params.shape)
+        child_params = child_params + noise
+        
+        return Genome(params=child_params.astype(np.float32))
 
     def _mutate(self, genome: Genome) -> None:
         mask = self.rng.random(genome.params.shape) < self.mutation_rate
+        # Mutação gaussiana com chance de mutação mais forte (10% das mutações)
+        strong_mutation_mask = self.rng.random(genome.params.shape) < 0.1
         noise = self.rng.normal(0.0, self.mutation_std, size=genome.params.shape)
-        genome.params = genome.params + mask * noise
+        # Mutações fortes têm 3x o desvio padrão
+        strong_noise = self.rng.normal(0.0, self.mutation_std * 3.0, size=genome.params.shape)
+        final_noise = np.where(strong_mutation_mask, strong_noise, noise)
+        genome.params = genome.params + mask * final_noise
     
     def update_adaptive_mutation(self, best_fitness: float) -> None:
         """Atualiza taxa de mutação adaptativamente baseada no progresso."""
@@ -77,30 +90,33 @@ class GeneticAlgorithm:
         
         self.best_fitness_history.append(best_fitness)
         
-        # Se não houve melhoria nas últimas 10 gerações, aumenta exploração
-        if len(self.best_fitness_history) > 10:
-            recent_best = max(self.best_fitness_history[-10:])
-            if recent_best <= max(self.best_fitness_history[:-10] or [recent_best]):
+        # Se não houve melhoria nas últimas 20 gerações, aumenta exploração mais agressivamente
+        if len(self.best_fitness_history) > 20:
+            recent_best = max(self.best_fitness_history[-20:])
+            previous_best = max(self.best_fitness_history[:-20] or [recent_best])
+            
+            # Verifica se realmente estagnou (com tolerância pequena)
+            if recent_best <= previous_best + 0.1:  # Tolerância de 0.1
                 self.generations_without_improvement += 1
-                # Aumenta mutação gradualmente
+                # Aumenta mutação mais agressivamente quando estagnado
                 self.mutation_rate = min(
-                    self.base_mutation_rate * 1.5,
-                    self.mutation_rate * 1.05
+                    self.base_mutation_rate * 2.0,  # Pode dobrar
+                    self.mutation_rate * 1.1  # Aumenta 10% por geração
                 )
                 self.mutation_std = min(
-                    self.base_mutation_std * 1.2,
-                    self.mutation_std * 1.02
+                    self.base_mutation_std * 2.0,
+                    self.mutation_std * 1.05
                 )
             else:
-                # Reduz mutação quando há progresso
+                # Reduz mutação mais lentamente quando há progresso
                 self.generations_without_improvement = 0
                 self.mutation_rate = max(
-                    self.base_mutation_rate * 0.5,
-                    self.mutation_rate * 0.98
+                    self.base_mutation_rate * 0.7,  # Não reduz tanto
+                    self.mutation_rate * 0.995  # Reduz muito lentamente
                 )
                 self.mutation_std = max(
-                    self.base_mutation_std * 0.8,
-                    self.mutation_std * 0.99
+                    self.base_mutation_std * 0.9,
+                    self.mutation_std * 0.998
                 )
 
     def next_generation(self, population: List[Genome]) -> List[Genome]:
@@ -112,13 +128,27 @@ class GeneticAlgorithm:
 
         new_population: List[Genome] = []
 
+        # Reduz elite para manter mais diversidade
         elite_count = max(1, int(self.elite_fraction * self.population_size))
         for i in range(elite_count):
             new_population.append(population[i].copy())
+        
+        # Adiciona alguns indivíduos aleatórios da população (diversidade)
+        diversity_count = max(1, int(0.05 * self.population_size))  # 5% aleatórios
+        for _ in range(diversity_count):
+            random_idx = self.rng.integers(0, len(population))
+            new_population.append(population[random_idx].copy())
 
         while len(new_population) < self.population_size:
-            parent1 = self._tournament_select(population)
-            parent2 = self._tournament_select(population)
+            parent1 = self._tournament_select(population, k=5)  # Torneio maior = mais diversidade
+            parent2 = self._tournament_select(population, k=5)
+            # Evita crossover entre indivíduos muito similares (mesma referência ou fitness muito próximo)
+            attempts = 0
+            while (parent1 is parent2 or 
+                   (parent1.fitness is not None and parent2.fitness is not None and 
+                    abs(parent1.fitness - parent2.fitness) < 0.01)) and attempts < 5:
+                parent2 = self._tournament_select(population, k=5)
+                attempts += 1
             child = self._crossover(parent1, parent2)
             self._mutate(child)
             new_population.append(child)
