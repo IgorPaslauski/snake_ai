@@ -66,15 +66,27 @@ def evaluate_genome(
     # Quanto mais maçãs, maior o bônus exponencial
     apples_bonus = 0.0
     if avg_apples > 0:
-        apples_bonus = 0.15 * avg_apples + 0.02 * (avg_apples ** 1.5)  # Bônus não-linear
+        apples_bonus = 0.2 * avg_apples + 0.05 * (avg_apples ** 1.5)  # Bônus não-linear aumentado
+    
+    # Bônus por sobrevivência longa (incentiva estratégias estáveis)
+    survival_bonus = 0.0
+    if avg_steps > 50 and avg_apples > 0:
+        survival_bonus = 0.1 * min(avg_steps / 100.0, 1.0)  # Bônus até 0.1
     
     # Penalidade por muitos passos sem maçãs (incentiva eficiência)
     steps_penalty = 0.0
     if avg_steps > 200 and avg_apples < 1:
-        steps_penalty = -0.1 * (avg_steps / 200)
+        steps_penalty = -0.15 * (avg_steps / 200)
     
-    fitness = avg_fitness + apples_bonus + efficiency_bonus + steps_penalty
+    # Bônus por consistência (menos variância entre episódios)
+    # Se todos os episódios tiveram pelo menos 1 maçã, bônus adicional
+    consistency_bonus = 0.0
+    if avg_apples >= 2.0:  # Pelo menos 2 maçãs em média
+        consistency_bonus = 0.1 * min(avg_apples / 5.0, 1.0)  # Bônus até 0.1
+    
+    fitness = avg_fitness + apples_bonus + efficiency_bonus + survival_bonus + consistency_bonus + steps_penalty
     genome.fitness = float(fitness)
+    genome.shared_fitness = None  # Será calculado pelo fitness sharing
     return float(fitness)
 
 

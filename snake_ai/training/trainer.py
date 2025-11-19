@@ -91,6 +91,9 @@ class Trainer:
             elite_fraction=cfg.elite_fraction,
             rng=self.rng,
             adaptive_mutation=cfg.adaptive_mutation,
+            fitness_sharing=True,  # Ativa fitness sharing para manter diversidade
+            sharing_sigma=0.15,  # Distância de compartilhamento
+            hall_of_fame_size=15,  # Mantém 15 melhores históricos
         )
 
         # Usa inicialização Xavier para melhor convergência

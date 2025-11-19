@@ -22,6 +22,9 @@ class GeneticAlgorithm:
         elite_fraction: float,
         rng: np.random.Generator | None = None,
         adaptive_mutation: bool = True,
+        fitness_sharing: bool = True,
+        sharing_sigma: float = 0.1,
+        hall_of_fame_size: int = 10,
     ):
         self.population_size = population_size
         self.base_mutation_rate = mutation_rate
@@ -34,6 +37,14 @@ class GeneticAlgorithm:
         self.adaptive_mutation = adaptive_mutation
         self.generations_without_improvement = 0
         self.best_fitness_history = []
+        
+        # Fitness Sharing: mantém diversidade penalizando indivíduos similares
+        self.fitness_sharing = fitness_sharing
+        self.sharing_sigma = sharing_sigma  # Distância de compartilhamento
+        
+        # Hall of Fame: mantém melhores indivíduos históricos
+        self.hall_of_fame_size = hall_of_fame_size
+        self.hall_of_fame: List[Genome] = []
 
     def init_population(self, num_params: int, init_method: str = "xavier") -> List[Genome]:
         """
@@ -53,9 +64,80 @@ class GeneticAlgorithm:
             population.append(Genome(params=params))
         return population
 
+    def _distance(self, genome1: Genome, genome2: Genome) -> float:
+        """Calcula distância euclidiana normalizada entre dois genomas."""
+        diff = genome1.params - genome2.params
+        return float(np.sqrt(np.sum(diff ** 2)) / len(diff))
+    
+    def _apply_fitness_sharing(self, population: List[Genome]) -> None:
+        """Aplica fitness sharing para manter diversidade."""
+        if not self.fitness_sharing:
+            # Se não usar sharing, shared_fitness = fitness original
+            for genome in population:
+                genome.shared_fitness = genome.fitness
+            return
+        
+        # Calcula fitness compartilhado para cada indivíduo
+        for i, genome in enumerate(population):
+            if genome.fitness is None:
+                genome.shared_fitness = None
+                continue
+            
+            sharing_sum = 1.0  # Começa com 1 (próprio indivíduo)
+            
+            # Soma contribuições de indivíduos similares
+            for j, other in enumerate(population):
+                if i != j and other.fitness is not None:
+                    dist = self._distance(genome, other)
+                    if dist < self.sharing_sigma:
+                        # Função de sharing: 1 - (dist/sigma)^2
+                        sharing_value = 1.0 - (dist / self.sharing_sigma) ** 2
+                        sharing_sum += max(0.0, sharing_value)
+            
+            # Fitness compartilhado = fitness original / soma de sharing
+            genome.shared_fitness = genome.fitness / sharing_sum
+    
+    def _update_hall_of_fame(self, population: List[Genome]) -> None:
+        """Atualiza Hall of Fame com os melhores indivíduos históricos (usa fitness original)."""
+        # Adiciona melhores da população atual ao Hall of Fame
+        sorted_pop = sorted(
+            population,
+            key=lambda g: g.fitness if g.fitness is not None else -1e9,
+            reverse=True
+        )
+        
+        for genome in sorted_pop[:5]:  # Top 5 da geração atual
+            if genome.fitness is None:
+                continue
+            
+            # Adiciona se não está no Hall of Fame ou é melhor
+            is_duplicate = False
+            for hof_genome in self.hall_of_fame:
+                if self._distance(genome, hof_genome) < 0.01:  # Muito similar
+                    if genome.fitness > (hof_genome.fitness or -1e9):
+                        # Substitui se é melhor
+                        self.hall_of_fame.remove(hof_genome)
+                        self.hall_of_fame.append(genome.copy())
+                    is_duplicate = True
+                    break
+            
+            if not is_duplicate:
+                self.hall_of_fame.append(genome.copy())
+        
+        # Mantém apenas os melhores no Hall of Fame (baseado em fitness original)
+        self.hall_of_fame = sorted(
+            self.hall_of_fame,
+            key=lambda g: g.fitness if g.fitness is not None else -1e9,
+            reverse=True
+        )[:self.hall_of_fame_size]
+    
     def _tournament_select(self, population: List[Genome], k: int = 3) -> Genome:
         competitors = self.rng.choice(population, size=k, replace=False)
-        best = max(competitors, key=lambda g: g.fitness if g.fitness is not None else -1e9)
+        # Usa shared_fitness para seleção (se disponível), senão usa fitness original
+        best = max(competitors, key=lambda g: (
+            g.shared_fitness if g.shared_fitness is not None 
+            else (g.fitness if g.fitness is not None else -1e9)
+        ))
         return best
 
     def _crossover(self, parent1: Genome, parent2: Genome) -> Genome:
@@ -120,9 +202,19 @@ class GeneticAlgorithm:
                 )
 
     def next_generation(self, population: List[Genome]) -> List[Genome]:
+        # Aplica fitness sharing (calcula shared_fitness, mantém fitness original)
+        self._apply_fitness_sharing(population)
+        
+        # Atualiza Hall of Fame com fitness original (não compartilhado)
+        self._update_hall_of_fame(population)
+        
+        # Ordena por fitness compartilhado (para seleção)
         population = sorted(
             population,
-            key=lambda g: g.fitness if g.fitness is not None else -1e9,
+            key=lambda g: (
+                g.shared_fitness if g.shared_fitness is not None 
+                else (g.fitness if g.fitness is not None else -1e9)
+            ),
             reverse=True,
         )
 
@@ -133,6 +225,13 @@ class GeneticAlgorithm:
         for i in range(elite_count):
             new_population.append(population[i].copy())
         
+        # Adiciona alguns indivíduos do Hall of Fame (10% da população)
+        hof_count = max(1, int(0.1 * self.population_size))
+        if self.hall_of_fame:
+            for i in range(min(hof_count, len(self.hall_of_fame))):
+                hof_genome = self.hall_of_fame[i % len(self.hall_of_fame)]
+                new_population.append(hof_genome.copy())
+        
         # Adiciona alguns indivíduos aleatórios da população (diversidade)
         diversity_count = max(1, int(0.05 * self.population_size))  # 5% aleatórios
         for _ in range(diversity_count):
@@ -142,11 +241,10 @@ class GeneticAlgorithm:
         while len(new_population) < self.population_size:
             parent1 = self._tournament_select(population, k=5)  # Torneio maior = mais diversidade
             parent2 = self._tournament_select(population, k=5)
-            # Evita crossover entre indivíduos muito similares (mesma referência ou fitness muito próximo)
+            # Evita crossover entre indivíduos muito similares
             attempts = 0
             while (parent1 is parent2 or 
-                   (parent1.fitness is not None and parent2.fitness is not None and 
-                    abs(parent1.fitness - parent2.fitness) < 0.01)) and attempts < 5:
+                   self._distance(parent1, parent2) < 0.05) and attempts < 5:
                 parent2 = self._tournament_select(population, k=5)
                 attempts += 1
             child = self._crossover(parent1, parent2)
