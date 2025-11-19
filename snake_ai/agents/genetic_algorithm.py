@@ -25,6 +25,9 @@ class GeneticAlgorithm:
         fitness_sharing: bool = True,
         sharing_sigma: float = 0.1,
         hall_of_fame_size: int = 10,
+        cataclysm_generations: int = 150,
+        cataclysm_fraction: float = 0.3,
+        random_immigrant_fraction: float = 0.02,
     ):
         self.population_size = population_size
         self.base_mutation_rate = mutation_rate
@@ -46,11 +49,18 @@ class GeneticAlgorithm:
         self.hall_of_fame_size = hall_of_fame_size
         self.hall_of_fame: List[Genome] = []
 
+        # Cataclysm (reinicialização parcial) para escapar de ótimos locais
+        self.cataclysm_generations = cataclysm_generations
+        self.cataclysm_fraction = cataclysm_fraction
+        self.random_immigrant_fraction = random_immigrant_fraction
+        self.num_params: int | None = None  # definido em init_population
+
     def init_population(self, num_params: int, init_method: str = "xavier") -> List[Genome]:
         """
         Inicializa população com pesos aleatórios.
         init_method: "xavier" para inicialização Xavier, "normal" para normal padrão
         """
+        self.num_params = num_params
         population: List[Genome] = []
         for _ in range(self.population_size):
             if init_method == "xavier":
@@ -68,6 +78,14 @@ class GeneticAlgorithm:
         """Calcula distância euclidiana normalizada entre dois genomas."""
         diff = genome1.params - genome2.params
         return float(np.sqrt(np.sum(diff ** 2)) / len(diff))
+
+    def _random_genome(self) -> Genome:
+        """Cria um novo genome aleatório usando mesma estratégia de inicialização."""
+        if self.num_params is None:
+            raise ValueError("Número de parâmetros desconhecido. Chame init_population antes.")
+        limit = np.sqrt(6.0 / self.num_params)
+        params = self.rng.uniform(-limit, limit, self.num_params).astype(np.float32)
+        return Genome(params=params)
     
     def _apply_fitness_sharing(self, population: List[Genome]) -> None:
         """Aplica fitness sharing para manter diversidade."""
@@ -112,12 +130,11 @@ class GeneticAlgorithm:
             
             # Adiciona se não está no Hall of Fame ou é melhor
             is_duplicate = False
-            for hof_genome in self.hall_of_fame:
+            for i, hof_genome in enumerate(self.hall_of_fame):
                 if self._distance(genome, hof_genome) < 0.01:  # Muito similar
                     if genome.fitness > (hof_genome.fitness or -1e9):
-                        # Substitui se é melhor
-                        self.hall_of_fame.remove(hof_genome)
-                        self.hall_of_fame.append(genome.copy())
+                        # Substitui se é melhor (usa índice para evitar problema com arrays)
+                        self.hall_of_fame[i] = genome.copy()
                     is_duplicate = True
                     break
             
@@ -238,7 +255,10 @@ class GeneticAlgorithm:
             random_idx = self.rng.integers(0, len(population))
             new_population.append(population[random_idx].copy())
 
-        while len(new_population) < self.population_size:
+        immigrant_count = max(1, int(self.random_immigrant_fraction * self.population_size))
+        target_size_before_immigrants = max(0, self.population_size - immigrant_count)
+
+        while len(new_population) < target_size_before_immigrants:
             parent1 = self._tournament_select(population, k=5)  # Torneio maior = mais diversidade
             parent2 = self._tournament_select(population, k=5)
             # Evita crossover entre indivíduos muito similares
@@ -250,5 +270,26 @@ class GeneticAlgorithm:
             child = self._crossover(parent1, parent2)
             self._mutate(child)
             new_population.append(child)
+
+        # Injeta imigrantes aleatórios para manter exploração
+        while len(new_population) < self.population_size:
+            new_population.append(self._random_genome())
+
+        # Cataclysm: reinicializa parte da população se estagnado por muito tempo
+        if (
+            self.cataclysm_generations is not None
+            and self.generations_without_improvement >= self.cataclysm_generations
+        ):
+            replacements = max(1, int(self.cataclysm_fraction * self.population_size))
+            for i in range(replacements):
+                idx = self.population_size - 1 - i
+                if idx < 0:
+                    break
+                new_population[idx] = self._random_genome()
+
+            # Reseta contadores e taxas após cataclysm
+            self.generations_without_improvement = 0
+            self.mutation_rate = self.base_mutation_rate
+            self.mutation_std = self.base_mutation_std
 
         return new_population
