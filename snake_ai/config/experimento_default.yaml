@@ -12,11 +12,11 @@ env:
   death_penalty: -1.0
 
 ga:
-  population_size: 120            # bem maior que antes, mas ainda viável
-  generations: 500                # suficientemente alto pra ver evolução grande
-  episodes_per_genome: 4          # média melhor de performance
+  population_size: 250            # população maior para mais diversidade genética
+  generations: 5000                # suficientemente alto pra ver evolução grande
+  episodes_per_genome: 8          # mais episódios por genoma para avaliação mais precisa
   mutation_rate: 0.08             # um pouco mais de exploração
-  mutation_std: 0.3               # mutações mais “fortes”
+  mutation_std: 0.3               # mutações mais "fortes"
   crossover_rate: 0.75
   elite_fraction: 0.1
 
@@ -31,3 +31,21 @@ visual:
 logging:
   save_logs: true
   save_best_model: true
+
+optimization:
+  # Paralelização: acelera significativamente o treinamento
+  use_parallel: true              # usar avaliação paralela (multiprocessing)
+  num_workers: null                # null = usar todos os cores disponíveis
+  
+  # Early stopping: para o treinamento se não houver melhoria
+  early_stopping_patience: 300    # número de gerações sem melhoria antes de parar (aumentado para treinos longos)
+  early_stopping_min_delta: 0.01  # melhoria mínima para resetar o contador (menos restritivo)
+  
+  # Checkpointing: salva estado do treinamento periodicamente
+  checkpoint_every_n_generations: 50  # salvar checkpoint a cada N gerações (null = desabilitado)
+  
+  # Mutação adaptativa: ajusta taxa de mutação baseado no progresso
+  adaptive_mutation: true          # ativar mutação adaptativa
+  
+  # Plotagem periódica: atualiza gráficos durante o treinamento
+  plot_every_n_generations: 5     # plotar gráficos a cada N gerações (null = só no final)
